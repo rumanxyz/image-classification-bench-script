@@ -51,9 +51,6 @@ MODELS = [
 #     ["maxvit_small_tf_224", (224, 224)]
 # ]
 
-# Batch sizes to test
-BATCH_SIZES = [1]
-
 # Number of warmup and measurement iterations
 WARMUP_ITERATIONS = 5
 MEASUREMENT_ITERATIONS = 25
@@ -123,7 +120,7 @@ def load_images(image_dir, batch_size, image_size, max_images=1000):
     print(f"Created {len(batches)} batches of size {batch_size}")
     return batches
 
-def benchmark_model(model_info, device, image_dir, batch_sizes=BATCH_SIZES):
+def benchmark_model(model_info, device, image_dir, batch_sizes):
     """
     Benchmark a single model across different batch sizes using real images
     Returns a dictionary with timing and memory results
@@ -244,7 +241,7 @@ def benchmark_model(model_info, device, image_dir, batch_sizes=BATCH_SIZES):
     
     return results
 
-def run_all_benchmarks(image_dir, device):
+def run_all_benchmarks(image_dir, device, batch_sizes):
     """
     Run benchmarks for all models on the specified device
     
@@ -255,7 +252,7 @@ def run_all_benchmarks(image_dir, device):
     all_results = []
     
     for model_info in tqdm(MODELS, desc=f"Benchmarking on {device}"):
-        results = benchmark_model(model_info, device, image_dir)
+        results = benchmark_model(model_info, device, image_dir, batch_sizes)
         all_results.extend(results)
             
     return pd.DataFrame(all_results)
@@ -270,7 +267,7 @@ def parse_arguments():
                         help="Directory containing images for benchmarking")
     parser.add_argument("--run_on_gpu", action="store_true", 
                         help="Run benchmarks on GPU instead of CPU (default: run on CPU)")
-    parser.add_argument("--batch_sizes", type=int, nargs="+", default=BATCH_SIZES,
+    parser.add_argument("--batch_sizes", type=int, nargs="+", default=[1],
                         help="Batch sizes to benchmark (default: 1, 4, 8, 16, 32)")
     
     return parser.parse_args()
@@ -280,11 +277,9 @@ def run_and_save_benchmarks(args):
     Run all benchmarks and save results
     """
     print("=="*40)
-    # Update batch sizes if provided
-    global BATCH_SIZES
-    if args.batch_sizes:
-        BATCH_SIZES = args.batch_sizes
-        print(f"Using custom batch sizes: {BATCH_SIZES}")
+    
+    batch_sizes = args.batch_sizes
+    print(f"Using custom batch sizes: {batch_sizes}")
     
     # Determine device to use
     if args.run_on_gpu and torch.cuda.is_available():
@@ -312,7 +307,7 @@ def run_and_save_benchmarks(args):
     print("=="*40)
     
     # Run benchmarks on the selected device
-    results_df = run_all_benchmarks(args.image_dir, device)
+    results_df = run_all_benchmarks(args.image_dir, device, batch_sizes)
 
     print("=="*40)
     print("Saving results to local storage.")
@@ -331,9 +326,10 @@ def run_and_save_benchmarks(args):
     
     
     # Print summary for batch size 1
-    print("\nSummary for batch size 1:")
-    summary = results_df[results_df["batch_size"] == 1].sort_values("latency_ms")
-    print(summary[["model", "input_size", "latency_ms", "gpu_memory_gb", "cpu_memory_gb", "params_millions"]])
+    for batch in batch_sizes:
+        print(f"\nSummary for batch size {batch}:")
+        summary = results_df[results_df["batch_size"] == batch].sort_values("latency_ms")
+        print(summary[["model", "input_size", "latency_ms", "gpu_memory_gb", "cpu_memory_gb", "params_millions"]])
     
     return results_df, system_info
 
