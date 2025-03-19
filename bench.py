@@ -10,7 +10,6 @@ import psutil
 import os
 import platform
 import argparse
-from torch.profiler import profile, record_function, ProfilerActivity
 from torchvision import transforms
 from PIL import Image
 from pathlib import Path
@@ -20,54 +19,60 @@ def get_process_memory():
     process = psutil.Process(os.getpid())
     return process.memory_info().rss / (1024 ** 3)  # Convert to GB
 
-# Models to benchmark
-MODEL_NAMES = [
+# Models to benchmark with their input sizes
+# Format: [model_name, (image_size, image_size)]
+MODELS = [
     # ViT variants
-    "vit_base_patch16_224"
-]
-    # "vit_small_patch16_224", 
-    # "vit_tiny_patch16_224",
+    ["vit_base_patch16_224", (224, 224)]]
+#     ["vit_small_patch16_224", (224, 224)],
+#     ["vit_tiny_patch16_224", (224, 224)],
 #     # DeiT variants
-#     "deit_tiny_patch16_224", 
-#     "deit_small_patch16_224", 
-#     "deit_base_patch16_224",
+#     ["deit_tiny_patch16_224", (224, 224)],
+#     ["deit_small_patch16_224", (224, 224)],
+#     ["deit_base_patch16_224", (224, 224)],
 #     # Swin Transformer variants
-#     "swin_tiny_patch4_window7_224", 
-#     "swin_small_patch4_window7_224", 
-#     "swin_base_patch4_window7_224",
+#     ["swin_tiny_patch4_window7_224", (224, 224)],
+#     ["swin_small_patch4_window7_224", (224, 224)],
+#     ["swin_base_patch4_window7_224", (224, 224)],
 #     # Hybrid ViT variants
-#     "resnetv2_50x1_bit.goog_in21k_ft_in1k",
-#     "coat_tiny",
-#     "crossvit_tiny_240",
+#     ["resnetv2_50x1_bit.goog_in21k_ft_in1k", (224, 224)],
+#     ["coat_tiny", (224, 224)],
+#     ["crossvit_tiny_240", (240, 240)],
 #     # EfficientFormer variants
-#     "efficientformer_l1", 
-#     "efficientformer_l3", 
-#     "efficientformer_l7",
+#     ["efficientformer_l1", (224, 224)],
+#     ["efficientformer_l3", (224, 224)],
+#     ["efficientformer_l7", (224, 224)],
 #     # MobileViT variants
-#     "mobilevit_xxs", 
-#     "mobilevit_xs", 
-#     "mobilevit_s",
+#     ["mobilevit_xxs", (256, 256)],
+#     ["mobilevit_xs", (256, 256)],
+#     ["mobilevit_s", (256, 256)],
 #     # MaxViT variants
-#     "maxvit_tiny_tf_224", 
-#     "maxvit_small_tf_224"
+#     ["maxvit_tiny_tf_224", (224, 224)],
+#     ["maxvit_small_tf_224", (224, 224)]
 # ]
 
 # Batch sizes to test
-BATCH_SIZES = [1, 4, 8, 16, 32]
+BATCH_SIZES = [1]
 
 # Number of warmup and measurement iterations
-WARMUP_ITERATIONS = 10
-MEASUREMENT_ITERATIONS = 50
+WARMUP_ITERATIONS = 5
+MEASUREMENT_ITERATIONS = 25
 
-def load_images(image_dir, batch_size, max_images=1000):
+def load_images(image_dir, batch_size, image_size, max_images=1000):
     """
     Load images from a directory and prepare them for model input
     Returns a batch of preprocessed images
+    
+    Args:
+        image_dir: Directory containing images
+        batch_size: Size of each batch
+        image_size: Tuple of (height, width) for model input
+        max_images: Maximum number of images to load
     """
     # Standard preprocessing for pretrained models
     preprocess = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.Resize(int(image_size[0] * 1.14)),  # Resize to slightly larger than needed
+        transforms.CenterCrop(image_size),             # Then crop to exact size
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
@@ -118,19 +123,26 @@ def load_images(image_dir, batch_size, max_images=1000):
     print(f"Created {len(batches)} batches of size {batch_size}")
     return batches
 
-def benchmark_model(model_name, device, image_dir, batch_sizes=BATCH_SIZES):
+def benchmark_model(model_info, device, image_dir, batch_sizes=BATCH_SIZES):
     """
     Benchmark a single model across different batch sizes using real images
     Returns a dictionary with timing and memory results
+    
+    Args:
+        model_info: List containing [model_name, image_size]
+        device: Device to run on ("cpu" or "cuda")
+        image_dir: Directory containing images
+        batch_sizes: List of batch sizes to test
     """
+    model_name, image_size = model_info
     results = []
     
     for batch_size in batch_sizes:
         print(f"Testing {model_name} with batch size {batch_size} on {device}")
         
         try:
-            # Load images
-            image_batches = load_images(image_dir, batch_size)
+            # Load images with the correct size for this model
+            image_batches = load_images(image_dir, batch_size, image_size)
             
             # Load model
             model = timm.create_model(model_name, pretrained=True)
@@ -199,6 +211,7 @@ def benchmark_model(model_name, device, image_dir, batch_sizes=BATCH_SIZES):
             
             results.append({
                 "model": model_name,
+                "input_size": f"{image_size[0]}x{image_size[1]}",
                 "batch_size": batch_size,
                 "latency_ms": avg_latency,
                 "latency_std_ms": std_latency,
@@ -218,6 +231,7 @@ def benchmark_model(model_name, device, image_dir, batch_sizes=BATCH_SIZES):
             print(f"Error benchmarking {model_name} with batch size {batch_size}: {str(e)}")
             results.append({
                 "model": model_name,
+                "input_size": f"{image_size[0]}x{image_size[1]}",
                 "batch_size": batch_size,
                 "latency_ms": float('nan'),
                 "latency_std_ms": float('nan'),
@@ -230,112 +244,22 @@ def benchmark_model(model_name, device, image_dir, batch_sizes=BATCH_SIZES):
     
     return results
 
-def run_all_benchmarks(image_dir, device_list=["cpu", "cuda"]):
+def run_all_benchmarks(image_dir, device):
     """
-    Run benchmarks for all models on specified devices
+    Run benchmarks for all models on the specified device
+    
+    Args:
+        image_dir: Directory containing images
+        device: Device to run on ("cpu" or "cuda")
     """
     all_results = []
     
-    for device in device_list:
-        if device == "cuda" and not torch.cuda.is_available():
-            print("CUDA not available, skipping GPU benchmarks")
-            continue
-            
-        for model_name in tqdm(MODEL_NAMES, desc=f"Benchmarking on {device}"):
-            results = benchmark_model(model_name, device, image_dir)
-            all_results.extend(results)
+    for model_info in tqdm(MODELS, desc=f"Benchmarking on {device}"):
+        results = benchmark_model(model_info, device, image_dir)
+        all_results.extend(results)
             
     return pd.DataFrame(all_results)
 
-def plot_results(df, metric="latency_ms", batch_size=1):
-    """
-    Plot results for a specific metric and batch size
-    """
-    subset = df[df["batch_size"] == batch_size].copy()
-    subset = subset.sort_values(metric)
-    
-    plt.figure(figsize=(12, 8))
-    
-    # Separate by device
-    for device in subset["device"].unique():
-        device_data = subset[subset["device"] == device]
-        plt.barh(device_data["model"], device_data[metric], label=device)
-    
-    plt.xlabel(metric)
-    plt.ylabel("Model")
-    plt.title(f"{metric} for Batch Size {batch_size}")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f"{metric}_bs{batch_size}.png")
-    plt.close()
-
-def visualize_all_results(df):
-    """
-    Create comprehensive visualizations of the results
-    """
-    # Create a directory for plots
-    os.makedirs("plots", exist_ok=True)
-    
-    # Plot latency vs batch size for each model on CPU
-    plt.figure(figsize=(14, 10))
-    cpu_data = df[df["device"] == "cpu"]
-    
-    for model in MODEL_NAMES:
-        model_data = cpu_data[cpu_data["model"] == model]
-        if not model_data.empty:
-            plt.plot(model_data["batch_size"], model_data["latency_ms"], marker='o', label=model)
-    
-    plt.xlabel("Batch Size")
-    plt.ylabel("Latency (ms)")
-    plt.title("CPU Latency vs Batch Size")
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig("plots/cpu_latency_vs_batchsize.png")
-    plt.close()
-    
-    # If GPU data exists, plot GPU latency vs batch size
-    if "cuda" in df["device"].unique():
-        plt.figure(figsize=(14, 10))
-        gpu_data = df[df["device"] == "cuda"]
-        
-        for model in MODEL_NAMES:
-            model_data = gpu_data[gpu_data["model"] == model]
-            if not model_data.empty:
-                plt.plot(model_data["batch_size"], model_data["latency_ms"], marker='o', label=model)
-        
-        plt.xlabel("Batch Size")
-        plt.ylabel("Latency (ms)")
-        plt.title("GPU Latency vs Batch Size")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig("plots/gpu_latency_vs_batchsize.png")
-        plt.close()
-    
-    # Plot parameters vs latency for batch size 1
-    bs1_data = df[df["batch_size"] == 1]
-    plt.figure(figsize=(14, 10))
-    
-    for device in bs1_data["device"].unique():
-        device_data = bs1_data[bs1_data["device"] == device]
-        plt.scatter(device_data["params_millions"], device_data["latency_ms"], 
-                   label=device, alpha=0.7, s=100)
-        
-        # Add model names as annotations
-        for _, row in device_data.iterrows():
-            plt.annotate(row["model"].split('_')[0], 
-                        (row["params_millions"], row["latency_ms"]),
-                        fontsize=8)
-    
-    plt.xlabel("Parameters (Millions)")
-    plt.ylabel("Latency (ms)")
-    plt.title("Parameters vs Latency (Batch Size 1)")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig("plots/params_vs_latency.png")
-    plt.close()
 
 def parse_arguments():
     """
@@ -344,12 +268,10 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Benchmark vision transformer models with real images")
     parser.add_argument("--image_dir", type=str, required=True, 
                         help="Directory containing images for benchmarking")
-    parser.add_argument("--cpu_only", action="store_true", 
-                        help="Run benchmarks only on CPU")
+    parser.add_argument("--run_on_gpu", action="store_true", 
+                        help="Run benchmarks on GPU instead of CPU (default: run on CPU)")
     parser.add_argument("--batch_sizes", type=int, nargs="+", default=BATCH_SIZES,
                         help="Batch sizes to benchmark (default: 1, 4, 8, 16, 32)")
-    parser.add_argument("--models", type=str, nargs="+", default=None,
-                        help="Specific models to benchmark (default: all models)")
     
     return parser.parse_args()
 
@@ -357,29 +279,24 @@ def run_and_save_benchmarks(args):
     """
     Run all benchmarks and save results
     """
+    print("=="*40)
     # Update batch sizes if provided
     global BATCH_SIZES
     if args.batch_sizes:
         BATCH_SIZES = args.batch_sizes
         print(f"Using custom batch sizes: {BATCH_SIZES}")
     
-    # Update model list if provided
-    global MODEL_NAMES
-    if args.models:
-        MODEL_NAMES = args.models
-        print(f"Using custom model list: {MODEL_NAMES}")
-    
-    # Check if CUDA is available
-    device_list = ["cpu"]
-    if not args.cpu_only and torch.cuda.is_available():
-        device_list.append("cuda")
-        print(f"CUDA available: {torch.cuda.get_device_name(0)}")
+    # Determine device to use
+    if args.run_on_gpu and torch.cuda.is_available():
+        device = "cuda"
+        print(f"Running on GPU: {torch.cuda.get_device_name(0)}")
     else:
-        if args.cpu_only:
-            print("Running CPU benchmarks only as requested")
+        device = "cpu"
+        if args.run_on_gpu and not torch.cuda.is_available():
+            print("GPU requested but CUDA is not available. Running on CPU instead.")
         else:
-            print("CUDA not available, running CPU benchmarks only")
-    
+            print("Running on CPU")
+    print("=="*40)
     # Get system info
     system_info = {
         "cpu": platform.processor(),
@@ -387,43 +304,44 @@ def run_and_save_benchmarks(args):
         "cuda": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "N/A",
         "torch_version": torch.__version__,
         "timm_version": timm.__version__,
-        "image_dir": args.image_dir
+        "image_dir": args.image_dir,
+        "device_used": device
     }
     
     print(f"System info: {system_info}")
+    print("=="*40)
     
-    # Run benchmarks
-    results_df = run_all_benchmarks(args.image_dir, device_list)
+    # Run benchmarks on the selected device
+    results_df = run_all_benchmarks(args.image_dir, device)
+
+    print("=="*40)
+    print("Saving results to local storage.")
     
     # Save raw results
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    results_df.to_csv(f"vit_benchmark_results_{timestamp}.csv", index=False)
+    results_df.to_csv(f"vit_benchmark_results_{timestamp}_{device}.csv", index=False)
     
     # Create output directory for JSON results
     os.makedirs("results", exist_ok=True)
     
     # Save system info
-    with open(f"results/system_info_{timestamp}.json", "w") as f:
+    with open(f"results/system_info_{timestamp}_{device}.json", "w") as f:
         import json
         json.dump(system_info, f, indent=2)
     
-    # Generate basic plots
-    for batch_size in BATCH_SIZES:
-        plot_results(results_df, "latency_ms", batch_size)
-        if "cuda" in device_list:
-            plot_results(results_df, "gpu_memory_gb", batch_size)
-        plot_results(results_df, "cpu_memory_gb", batch_size)
-    
-    # Generate comprehensive visualizations
-    visualize_all_results(results_df)
     
     # Print summary for batch size 1
     print("\nSummary for batch size 1:")
     summary = results_df[results_df["batch_size"] == 1].sort_values("latency_ms")
-    print(summary[["model", "device", "latency_ms", "gpu_memory_gb", "cpu_memory_gb", "params_millions"]])
+    print(summary[["model", "input_size", "latency_ms", "gpu_memory_gb", "cpu_memory_gb", "params_millions"]])
     
     return results_df, system_info
 
 if __name__ == "__main__":
     args = parse_arguments()
     results_df, system_info = run_and_save_benchmarks(args)
+
+"""
+Example command :
+python3 bench.py --image_dir /workspace/dataset/images/test --run_on_gpu --batch_sizes 1 2 4
+"""
