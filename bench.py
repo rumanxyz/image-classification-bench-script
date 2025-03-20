@@ -23,33 +23,33 @@ def get_process_memory():
 # Format: [model_name, (image_size, image_size)]
 MODELS = [
     # ViT variants
-    ["vit_base_patch16_224", (224, 224)]]
-#     ["vit_small_patch16_224", (224, 224)],
-#     ["vit_tiny_patch16_224", (224, 224)],
+    ["vit_base_patch16_224", (224, 224)],
+    ["vit_small_patch16_224", (224, 224)],
+    ["vit_tiny_patch16_224", (224, 224)],
 #     # DeiT variants
-#     ["deit_tiny_patch16_224", (224, 224)],
-#     ["deit_small_patch16_224", (224, 224)],
-#     ["deit_base_patch16_224", (224, 224)],
+    ["deit_tiny_patch16_224", (224, 224)],
+    ["deit_small_patch16_224", (224, 224)],
+    ["deit_base_patch16_224", (224, 224)],
 #     # Swin Transformer variants
-#     ["swin_tiny_patch4_window7_224", (224, 224)],
-#     ["swin_small_patch4_window7_224", (224, 224)],
-#     ["swin_base_patch4_window7_224", (224, 224)],
+    ["swin_tiny_patch4_window7_224", (224, 224)],
+    ["swin_small_patch4_window7_224", (224, 224)],
+    ["swin_base_patch4_window7_224", (224, 224)],
 #     # Hybrid ViT variants
-#     ["resnetv2_50x1_bit.goog_in21k_ft_in1k", (224, 224)],
-#     ["coat_tiny", (224, 224)],
-#     ["crossvit_tiny_240", (240, 240)],
+    ["resnetv2_50x1_bit.goog_in21k_ft_in1k", (224, 224)],
+    ["coat_tiny", (224, 224)],
+    ["crossvit_tiny_240", (240, 240)],
 #     # EfficientFormer variants
-#     ["efficientformer_l1", (224, 224)],
-#     ["efficientformer_l3", (224, 224)],
-#     ["efficientformer_l7", (224, 224)],
+    ["efficientformer_l1", (224, 224)],
+    ["efficientformer_l3", (224, 224)],
+    ["efficientformer_l7", (224, 224)],
 #     # MobileViT variants
-#     ["mobilevit_xxs", (256, 256)],
-#     ["mobilevit_xs", (256, 256)],
-#     ["mobilevit_s", (256, 256)],
+    ["mobilevit_xxs", (256, 256)],
+    ["mobilevit_xs", (256, 256)],
+    ["mobilevit_s", (256, 256)],
 #     # MaxViT variants
-#     ["maxvit_tiny_tf_224", (224, 224)],
-#     ["maxvit_small_tf_224", (224, 224)]
-# ]
+    ["maxvit_tiny_tf_224", (224, 224)],
+    ["maxvit_small_tf_224", (224, 224)]
+]
 
 # Number of warmup and measurement iterations
 WARMUP_ITERATIONS = 5
@@ -84,7 +84,7 @@ def load_images(image_dir, batch_size, image_size, max_images=1000):
     if not image_paths:
         raise ValueError(f"No images found in directory: {image_dir}")
     
-    print(f"Found {len(image_paths)} images in {image_dir}")
+    print(f"\nFound {len(image_paths)} images in {image_dir}")
     
     # Limit number of images to process
     image_paths = image_paths[:max_images]
@@ -117,7 +117,7 @@ def load_images(image_dir, batch_size, image_size, max_images=1000):
             batch = torch.stack(batch)
             batches.append(batch)
     
-    print(f"Created {len(batches)} batches of size {batch_size}")
+    print(f"\nCreated {len(batches)} batches of size {batch_size}")
     return batches
 
 def benchmark_model(model_info, device, image_dir, batch_sizes):
@@ -135,7 +135,7 @@ def benchmark_model(model_info, device, image_dir, batch_sizes):
     results = []
     
     for batch_size in batch_sizes:
-        print(f"Testing {model_name} with batch size {batch_size} on {device}")
+        print(f"\nTesting {model_name} with batch size {batch_size} on {device}")
         
         try:
             # Load images with the correct size for this model
@@ -173,7 +173,7 @@ def benchmark_model(model_info, device, image_dir, batch_sizes):
             
             # Use first batch for remaining measurements if not enough batches
             if num_batches < MEASUREMENT_ITERATIONS:
-                print(f"Using first batch for remaining measurements (have {num_batches}, need {MEASUREMENT_ITERATIONS})")
+                print(f"\nUsing first batch for remaining measurements (have {num_batches}, need {MEASUREMENT_ITERATIONS})\n")
             
             for i in range(MEASUREMENT_ITERATIONS):
                 # Cycle through available batches
@@ -194,6 +194,7 @@ def benchmark_model(model_info, device, image_dir, batch_sizes):
             # Calculate average latency and std deviation
             avg_latency = np.mean(latencies)
             std_latency = np.std(latencies)
+            single_image_latency = avg_latency/batch_size
             
             # Measure memory usage
             if device == "cuda":
@@ -212,8 +213,11 @@ def benchmark_model(model_info, device, image_dir, batch_sizes):
                 "batch_size": batch_size,
                 "latency_ms": avg_latency,
                 "latency_std_ms": std_latency,
-                "gpu_memory_gb": gpu_memory_used,
-                "cpu_memory_gb": cpu_memory_used,
+                "single_image_latency_ms":single_image_latency,
+                "gpu_memory_base_gb": start_gpu_memory,
+                "gpu_memory_used_gb": gpu_memory_used,
+                "cpu_memory_base_gb": start_cpu_memory,
+                "cpu_memory_used_gb": cpu_memory_used,
                 "params_millions": param_count,
                 "device": device
             })
@@ -223,6 +227,9 @@ def benchmark_model(model_info, device, image_dir, batch_sizes):
             gc.collect()
             if device == "cuda":
                 torch.cuda.empty_cache()
+
+            print(f"\n{model_name} Test finished!\n")
+            print("=="*40, "\n")
                 
         except Exception as e:
             print(f"Error benchmarking {model_name} with batch size {batch_size}: {str(e)}")
@@ -255,7 +262,7 @@ def run_all_benchmarks(image_dir, device, batch_sizes):
         results = benchmark_model(model_info, device, image_dir, batch_sizes)
         all_results.extend(results)
             
-    return pd.DataFrame(all_results)
+    return all_results
 
 
 def parse_arguments():
@@ -279,7 +286,7 @@ def run_and_save_benchmarks(args):
     print("=="*40)
     
     batch_sizes = args.batch_sizes
-    print(f"Using custom batch sizes: {batch_sizes}")
+    print(f"\n Using custom batch sizes: {batch_sizes}")
     
     # Determine device to use
     if args.run_on_gpu and torch.cuda.is_available():
@@ -303,11 +310,13 @@ def run_and_save_benchmarks(args):
         "device_used": device
     }
     
-    print(f"System info: {system_info}")
+    print(f"\nSystem info: {system_info}")
     print("=="*40)
     
     # Run benchmarks on the selected device
-    results_df = run_all_benchmarks(args.image_dir, device, batch_sizes)
+    benchamrk_result = run_all_benchmarks(args.image_dir, device, batch_sizes)
+
+    results_df = pd.DataFrame(benchamrk_result)
 
     print("=="*40)
     print("Saving results to local storage.")
@@ -315,6 +324,7 @@ def run_and_save_benchmarks(args):
     # Save raw results
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     results_df.to_csv(f"vit_benchmark_results_{timestamp}_{device}.csv", index=False)
+    print(f"vit_benchmark_results_{timestamp}_{device}.csv")
     
     # Create output directory for JSON results
     os.makedirs("results", exist_ok=True)
@@ -322,14 +332,15 @@ def run_and_save_benchmarks(args):
     # Save system info
     with open(f"results/system_info_{timestamp}_{device}.json", "w") as f:
         import json
-        json.dump(system_info, f, indent=2)
-    
+        json.dump({"system_info":system_info, "benchamrk_result":benchamrk_result}, f, indent=2)
+    print(f"results/system_info_{timestamp}_{device}.json")
+    print("=="*40)
     
     # Print summary for batch size 1
     for batch in batch_sizes:
         print(f"\nSummary for batch size {batch}:")
         summary = results_df[results_df["batch_size"] == batch].sort_values("latency_ms")
-        print(summary[["model", "input_size", "latency_ms", "gpu_memory_gb", "cpu_memory_gb", "params_millions"]])
+        print(summary[["model", "input_size", "latency_ms", "single_image_latency_ms", "gpu_memory_used_gb", "cpu_memory_used_gb", "params_millions"]])
     
     return results_df, system_info
 
