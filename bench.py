@@ -13,6 +13,7 @@ import argparse
 from torchvision import transforms
 from PIL import Image
 from pathlib import Path
+import traceback
 
 # Number of warmup and measurement iterations
 WARMUP_ITERATIONS = 5
@@ -183,6 +184,7 @@ def benchmark_model(model_info, device, image_dir, batch_sizes):
                 gpu_memory_used = torch.cuda.max_memory_allocated() / (1024 ** 3) - start_gpu_memory  # GB
             else:
                 gpu_memory_used = 0
+                start_gpu_memory = 0
             
             cpu_memory_used = get_process_memory() - start_cpu_memory  # GB
             
@@ -227,6 +229,7 @@ def benchmark_model(model_info, device, image_dir, batch_sizes):
                 "device": device,
                 "error": str(e)
             })
+            traceback.print_exc()
     
     return results
 
@@ -268,7 +271,7 @@ def run_and_save_benchmarks(args):
     print("=="*40)
     
     batch_sizes = args.batch_sizes
-    print(f"\n Using custom batch sizes: {batch_sizes}")
+    print(f"\nUsing custom batch sizes: {batch_sizes}")
     
     # Determine device to use
     if args.run_on_gpu and torch.cuda.is_available():
