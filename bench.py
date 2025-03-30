@@ -14,46 +14,28 @@ from torchvision import transforms
 from PIL import Image
 from pathlib import Path
 
-# Function to get current process memory usage in GB
-def get_process_memory():
-    process = psutil.Process(os.getpid())
-    return process.memory_info().rss / (1024 ** 3)  # Convert to GB
+# Number of warmup and measurement iterations
+WARMUP_ITERATIONS = 5
+MEASUREMENT_ITERATIONS = 25
 
 # Models to benchmark with their input sizes
 # Format: [model_name, (image_size, image_size)]
 MODELS = [
-    # ViT variants
+    ["efficientnet_b0", (224, 224)],
     ["vit_base_patch16_224", (224, 224)],
     ["vit_small_patch16_224", (224, 224)],
-    ["vit_tiny_patch16_224", (224, 224)],
-#     # DeiT variants
-    ["deit_tiny_patch16_224", (224, 224)],
-    ["deit_small_patch16_224", (224, 224)],
-    ["deit_base_patch16_224", (224, 224)],
-#     # Swin Transformer variants
-    ["swin_tiny_patch4_window7_224", (224, 224)],
-    ["swin_small_patch4_window7_224", (224, 224)],
-    ["swin_base_patch4_window7_224", (224, 224)],
-#     # Hybrid ViT variants
-    ["resnetv2_50x1_bit.goog_in21k_ft_in1k", (224, 224)],
-    ["coat_tiny", (224, 224)],
-    ["crossvit_tiny_240", (240, 240)],
-#     # EfficientFormer variants
-    ["efficientformer_l1", (224, 224)],
-    ["efficientformer_l3", (224, 224)],
-    ["efficientformer_l7", (224, 224)],
-#     # MobileViT variants
-    ["mobilevit_xxs", (256, 256)],
-    ["mobilevit_xs", (256, 256)],
-    ["mobilevit_s", (256, 256)],
-#     # MaxViT variants
-    ["maxvit_tiny_tf_224", (224, 224)],
+    ["resnet50", (224, 224)],
+    ["convnext_tiny", (224, 224)],
+    ["vgg16", (224, 224)],
+    ["mobilenetv3_large_100", (224, 224)],
     ["maxvit_small_tf_224", (224, 224)]
 ]
 
-# Number of warmup and measurement iterations
-WARMUP_ITERATIONS = 5
-MEASUREMENT_ITERATIONS = 25
+
+# Function to get current process memory usage in GB
+def get_process_memory():
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / (1024 ** 3)  # Convert to GB
 
 def load_images(image_dir, batch_size, image_size, max_images=1000):
     """
