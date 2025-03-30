@@ -318,12 +318,6 @@ def run_and_save_benchmarks(args):
     print(f"results/system_info_{timestamp}_{device}.json")
     print("=="*40)
     
-    # Print summary for batch size 1
-    for batch in batch_sizes:
-        print(f"\nSummary for batch size {batch}:")
-        summary = results_df[results_df["batch_size"] == batch].sort_values("latency_ms")
-        print(summary[["model", "input_size", "latency_ms", "single_image_latency_ms", "gpu_memory_used_gb", "cpu_memory_used_gb", "params_millions"]])
-    
     return results_df, system_info
 
 if __name__ == "__main__":
